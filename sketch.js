@@ -24,7 +24,7 @@ function defineUI() {
   addWindowButton.style('border', 'none');
   addWindowButton.style('border-radius', '5px');
   addWindowButton.mousePressed(() => {
-    let newSW = new subWindow(100, 100, 400, 400);
+    new subWindow(100, 100, 400, 400);
   });
 
   imageDisplay = new ImageDisplay(createImage(1, 1));
@@ -59,7 +59,7 @@ class subWindow {
   }
   mouseInteract(){
     if(mouseIsPressed && !windowIsAbove){
-      let resizeEdgeThreshold = 20 + dist(mouseX, mouseY, pmouseX, pmouseY);
+      let resizeEdgeThreshold = ((this.bounds.w + this.bounds.h)/25) + dist(mouseX, mouseY, pmouseX, pmouseY);
       let waspressed = false;
       let isOnX = abs(mouseX - (this.bounds.x + this.bounds.w/2)) < this.bounds.w/2 + resizeEdgeThreshold;
       let isOnY = abs(mouseY - (this.bounds.y + this.bounds.h/2)) < this.bounds.h/2 + resizeEdgeThreshold;
