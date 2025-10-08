@@ -10,6 +10,7 @@ function setup() {
   dropCanvas = createCanvas(windowWidth, windowHeight);
   defineUI();
   background(100);
+  new subWindow(0, 0, 500, 500).addElement(new colorEditElement(0, 255, 10, 10, 400, 200));
 }
 
 function defineUI() {
@@ -58,6 +59,11 @@ class subWindow {
     this.edgeFills = {top: 0, bottom: 0, left: 0, right: 0};
   }
   mouseInteract(){
+    for(let i = 0; i < this.elements.length; i++){
+      if(this.elements[i].renderImage == undefined && mouseX > this.elements[i].bounds.x && mouseX < this.elements[i].bounds.x + this.elements[i].bounds.w && mouseY > this.elements[i].bounds.y && mouseY < this.elements[i].bounds.y + this.elements[i].bounds.h){
+        return;
+      }
+    }
     if(mouseIsPressed && !windowIsAbove){
       let resizeEdgeThreshold = ((this.bounds.w + this.bounds.h)/25) + dist(mouseX, mouseY, pmouseX, pmouseY);
       let waspressed = false;
@@ -65,12 +71,12 @@ class subWindow {
       let isOnY = abs(mouseY - (this.bounds.y + this.bounds.h/2)) < this.bounds.h/2 + resizeEdgeThreshold;
 
       // edge detection for resizing
-      if(isOnY && mouseX > this.bounds.x + this.bounds.w - resizeEdgeThreshold && mouseX < this.bounds.x + this.bounds.w + resizeEdgeThreshold){
+      if(isOnY && mouseX > this.bounds.x + this.bounds.w - resizeEdgeThreshold/2 && mouseX < this.bounds.x + this.bounds.w + resizeEdgeThreshold){
         this.bounds.w = mouseX - this.bounds.x;
         this.edgeFills.right = 255;
         waspressed = true;
       } else this.edgeFills.right = 0;      
-      if(isOnX && mouseY > this.bounds.y + this.bounds.h - resizeEdgeThreshold && mouseY < this.bounds.y + this.bounds.h + resizeEdgeThreshold){
+      if(isOnX && mouseY > this.bounds.y + this.bounds.h - resizeEdgeThreshold/2 && mouseY < this.bounds.y + this.bounds.h + resizeEdgeThreshold){
         this.bounds.h = mouseY - this.bounds.y;
         this.edgeFills.bottom = 255;
         waspressed = true;
@@ -104,10 +110,13 @@ class subWindow {
       }
     }
     else this.edgeFills = {top: 0, bottom: 0, left: 0, right: 0};
+    this.bounds.x = constrain(this.bounds.x, 0, width - this.bounds.w);
+    this.bounds.y = constrain(this.bounds.y, 0, height - this.bounds.h);
   }
   update(){
     this.mouseInteract();
     for(let i = 0; i < this.elements.length; i++){
+      this.elements[i].bounds = {x: this.bounds.x + this.elementOffsets[i].x, y: this.bounds.y + this.elementOffsets[i].y, w: this.elements[i].bounds.w, h: this.elements[i].bounds.h};
       if(this.elements[i].constrainWithin != undefined) this.elements[i].constrainWithin(this.bounds.x, this.bounds.y, this.bounds.w, this.bounds.h);
     }
   }
@@ -136,6 +145,76 @@ class subWindow {
     this.elements.push(element);
     this.elementOffsets.push({x: element.bounds.x - this.bounds.x, y: element.bounds.y - this.bounds.y});
     return this;
+  }
+}
+
+class colorEditElement {
+  constructor(colorRangeStart, colorRangeEnd, x=0, y=0, w=200, h=50){
+    this.bounds = {x: x, y: y, w: w, h: h};
+    this.colorRangeStart = colorRangeStart;
+    this.colorRangeEnd = colorRangeEnd;
+    this.splineEditor = new splineEditorElement(5, 100, 50, true, colorRangeStart, colorRangeEnd);
+  }
+  drawSelf(){
+    this.splineEditor.bounds = this.bounds;
+    this.splineEditor.drawSelf();
+  }
+}
+
+class splineEditorElement {
+  constructor(controlPoints = 5, controlRange, controlValueRange = 50, doLerpStroke=false, lerpColorStart=[0,0,0], lerpColorEnd=[255,255,255]){
+    this.bounds = {x: 0, y: 0, w: 200, h: 200};
+    this.prevBounds = this.bounds;
+    this.controlPoints = [];
+    for(let i = 1; i < controlPoints+1; i++){
+      this.controlPoints.push({baseValue: (i-1/controlPoints)*controlRange, currentBaseValue: (i-1/controlPoints)*controlRange, currentValue: i});
+    }
+    let minValue = 1000;
+    let maxValue = -1000;
+    for(let i = 0; i < this.controlPoints.length; i++){
+      if(this.controlPoints[i].baseValue < minValue) minValue = this.controlPoints[i].baseValue;
+      if(this.controlPoints[i].baseValue > maxValue) maxValue = this.controlPoints[i].baseValue;
+    }
+    this.minControlValue = minValue;
+    this.maxControlValue = maxValue;
+    this.doLerpStroke = doLerpStroke;
+    this.lerpColorStart = lerpColorStart;
+    this.lerpColorEnd = lerpColorEnd;
+    this.controlValueRange = controlValueRange;
+    this.getMappedCoordinates();
+  }
+  drawSelf(){
+    fill(150);
+    stroke(0);
+    rect(this.bounds.x, this.bounds.y, this.bounds.w, this.bounds.h);
+    this.mouseInteract();
+    strokeWeight(2);
+    if(this.prevBounds != this.bounds) this.getMappedCoordinates();
+    noFill();
+    
+    this.prevBounds = this.bounds;
+  }
+  mouseInteract(){
+    if(mouseIsPressed){
+      for(let i = 0; i < this.mappedCoordinates.length; i++){
+        if(dist(mouseX, mouseY, this.mappedCoordinates[i].x, this.mappedCoordinates[i].y) < 10+dist(mouseX, mouseY, pmouseX, pmouseY)){
+          this.controlPoints[i].currentValue = map(mouseY, this.bounds.y + this.bounds.h, this.bounds.y, -this.controlValueRange, this.controlValueRange);
+          this.controlPoints[i].currentBaseValue = map(mouseX, this.bounds.x + (this.bounds.w/this.controlPoints.length), this.bounds.x + this.bounds.w - (this.bounds.w/this.controlPoints.length), this.minControlValue, this.maxControlValue);
+          this.controlPoints[i].currentValue = constrain(this.controlPoints[i].currentValue, -this.controlValueRange, this.controlValueRange);
+          this.controlPoints[i].currentBaseValue = constrain(this.controlPoints[i].currentBaseValue, i>0?this.controlPoints[i-1].currentBaseValue:this.minControlValue, i<this.controlPoints.length-1?this.controlPoints[i+1].currentBaseValue:this.maxControlValue);
+          this.getMappedCoordinates
+          break;
+        }
+      }
+    }
+  }
+  getMappedCoordinates(){
+    this.mappedCoordinates = [];
+    for(let i = 0; i < this.controlPoints.length; i++){
+      let x = map(this.controlPoints[i].currentBaseValue, this.minControlValue, this.maxControlValue, this.bounds.x + (this.bounds.w/this.controlPoints.length), this.bounds.x + this.bounds.w - (this.bounds.w/this.controlPoints.length));
+      let y = map(this.controlPoints[i].currentValue, this.controlValueRange, -this.controlValueRange, this.bounds.y, this.bounds.y + this.bounds.h);
+      this.mappedCoordinates.push({x: x, y: y});
+    }
   }
 }
 
