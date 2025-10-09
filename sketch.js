@@ -10,7 +10,10 @@ function setup() {
   dropCanvas = createCanvas(windowWidth, windowHeight);
   defineUI();
   background(100);
-  new subWindow(0, 0, 500, 500).addElement(new colorEditElement(0, 255, 10, 10, 400, 200));
+  new subWindow(0, 0, 550, 700)
+  .addElement(new editColorElement(0, 10, 10, 480, 150))
+  .addElement(new editColorElement(1, 10, 170, 480, 150))
+  .addElement(new editColorElement(2, 10, 330, 480, 150));
 }
 
 function defineUI() {
@@ -28,7 +31,7 @@ function defineUI() {
     new subWindow(100, 100, 400, 400);
   });
 
-  imageDisplay = new ImageDisplay(createImage(1, 1));
+  imageDisplay = new ImageDisplay(createImage(1, 1), createImage(1, 1));
 }
 
 function windowResized() {
@@ -45,9 +48,8 @@ function draw() {
 
 function loadInImage(file) {
   if (file.type === 'image') {
-    loadedImage = loadImage(file.data);
+    imageDisplay.newImage(loadImage(file.data), loadImage(file.data));
   }  else console.log('Not an image file!');
-  imageDisplay.newImage(loadedImage);
 }
 
 class subWindow {
@@ -56,6 +58,9 @@ class subWindow {
     subWindows.push(this);
     this.elements = [];
     this.elementOffsets = [];
+    this.elementSizes = [];
+    this.startW = w;
+    this.startH = h;
     this.edgeFills = {top: 0, bottom: 0, left: 0, right: 0};
   }
   mouseInteract(){
@@ -116,7 +121,12 @@ class subWindow {
   update(){
     this.mouseInteract();
     for(let i = 0; i < this.elements.length; i++){
-      this.elements[i].bounds = {x: this.bounds.x + this.elementOffsets[i].x, y: this.bounds.y + this.elementOffsets[i].y, w: this.elements[i].bounds.w, h: this.elements[i].bounds.h};
+      this.elements[i].bounds = {
+        x: this.bounds.x + (this.elementOffsets[i].x*(this.bounds.w/this.startW)), 
+        y: this.bounds.y + (this.elementOffsets[i].y*(this.bounds.h/this.startH)), 
+        w: (this.bounds.w/this.startW)*(this.elementSizes[i].w), 
+        h: (this.bounds.h/this.startH)*(this.elementSizes[i].h)
+      };
       if(this.elements[i].constrainWithin != undefined) this.elements[i].constrainWithin(this.bounds.x, this.bounds.y, this.bounds.w, this.bounds.h);
     }
   }
@@ -144,87 +154,158 @@ class subWindow {
   addElement(element){
     this.elements.push(element);
     this.elementOffsets.push({x: element.bounds.x - this.bounds.x, y: element.bounds.y - this.bounds.y});
+    this.elementSizes.push({w: element.bounds.w, h: element.bounds.h});
     return this;
   }
 }
 
-class colorEditElement {
-  constructor(colorRangeStart, colorRangeEnd, x=0, y=0, w=200, h=50){
+class element {
+  constructor(x, y, w, h) {
     this.bounds = {x: x, y: y, w: w, h: h};
-    this.colorRangeStart = colorRangeStart;
-    this.colorRangeEnd = colorRangeEnd;
-    this.splineEditor = new splineEditorElement(5, 100, 50, true, colorRangeStart, colorRangeEnd);
   }
-  drawSelf(){
-    this.splineEditor.bounds = this.bounds;
-    this.splineEditor.drawSelf();
+  setPosition(x, y) {
+    this.bounds.x = x;
+    this.bounds.y = y;
+    return this;
+  }
+  setSize(w, h) {
+    this.bounds.w = w;
+    this.bounds.h = h;
+    return this;
+  }
+  isMouseOver(){
+    return mouseX > this.bounds.x && mouseX < this.bounds.x + this.bounds.w && mouseY > this.bounds.y && mouseY < this.bounds.y + this.bounds.h;
+  }
+  isSelected(){
+    return this.isMouseOver() && mouseIsPressed;
+  }
+  drawBounds(){
+    noFill();
+    stroke(255, 0, 0);
+    rect(this.bounds.x, this.bounds.y, this.bounds.w, this.bounds.h);
   }
 }
 
-class splineEditorElement {
-  constructor(controlPoints = 5, controlRange, controlValueRange = 50, doLerpStroke=false, lerpColorStart=[0,0,0], lerpColorEnd=[255,255,255]){
-    this.bounds = {x: 0, y: 0, w: 200, h: 200};
-    this.prevBounds = this.bounds;
-    this.controlPoints = [];
-    for(let i = 1; i < controlPoints+1; i++){
-      this.controlPoints.push({baseValue: (i-1/controlPoints)*controlRange, currentBaseValue: (i-1/controlPoints)*controlRange, currentValue: i});
-    }
-    let minValue = 1000;
-    let maxValue = -1000;
-    for(let i = 0; i < this.controlPoints.length; i++){
-      if(this.controlPoints[i].baseValue < minValue) minValue = this.controlPoints[i].baseValue;
-      if(this.controlPoints[i].baseValue > maxValue) maxValue = this.controlPoints[i].baseValue;
-    }
-    this.minControlValue = minValue;
-    this.maxControlValue = maxValue;
-    this.doLerpStroke = doLerpStroke;
-    this.lerpColorStart = lerpColorStart;
-    this.lerpColorEnd = lerpColorEnd;
-    this.controlValueRange = controlValueRange;
-    this.getMappedCoordinates();
+class editSplineElement extends element {
+  constructor(valueStart, valueEnd, minValue, maxValue, x, y, w, h) {
+    super(x, y, w, h);
+    this.valueStart = valueStart;
+    this.valueEnd = valueEnd;
+    this.minValue = minValue;
+    this.maxValue = maxValue;
+    this.splinePoints = [{x:this.valueStart, y:this.minValue},{x:this.valueStart, y:this.maxValue}];
+    this.mappedPoints = [];
+    this.setMappedPoints();
+    this.changedPoints = true;
   }
-  drawSelf(){
+  drawBG(){
     fill(150);
-    stroke(0);
     rect(this.bounds.x, this.bounds.y, this.bounds.w, this.bounds.h);
-    this.mouseInteract();
-    strokeWeight(2);
-    if(this.prevBounds != this.bounds) this.getMappedCoordinates();
+  }
+  drawSpline(){
+    stroke(0);
     noFill();
-    
-    this.prevBounds = this.bounds;
+    this.mouseInteract();
+    this.setMappedPoints();
+    beginShape();
+    for(let i = 0; i < this.mappedPoints.length; i++){
+      vertex(this.mappedPoints[i].x, this.mappedPoints[i].y);
+    }
+    endShape();
+    for(let i = 0; i < this.mappedPoints.length; i++){
+      fill(0)
+      noStroke();
+      if(dist(mouseX, mouseY, this.mappedPoints[i].x, this.mappedPoints[i].y) < 10 && mouseIsPressed) fill(255);
+      circle(this.mappedPoints[i].x, this.mappedPoints[i].y, 15);
+    }
+  }
+  setMappedPoints(){
+    this.mappedPoints = [];
+    for(let i = 0; i < this.splinePoints.length; i++){
+      let px = map(this.splinePoints[i].x, this.valueStart, this.valueEnd, this.bounds.x+15, this.bounds.x + this.bounds.w-15);
+      let py = map(this.splinePoints[i].y, this.minValue, this.maxValue, this.bounds.y + this.bounds.h-15, this.bounds.y+15);
+      this.mappedPoints.push({x: px, y: py});
+    }
   }
   mouseInteract(){
-    if(mouseIsPressed){
-      for(let i = 0; i < this.mappedCoordinates.length; i++){
-        if(dist(mouseX, mouseY, this.mappedCoordinates[i].x, this.mappedCoordinates[i].y) < 10+dist(mouseX, mouseY, pmouseX, pmouseY)){
-          this.controlPoints[i].currentValue = map(mouseY, this.bounds.y + this.bounds.h, this.bounds.y, -this.controlValueRange, this.controlValueRange);
-          this.controlPoints[i].currentBaseValue = map(mouseX, this.bounds.x + (this.bounds.w/this.controlPoints.length), this.bounds.x + this.bounds.w - (this.bounds.w/this.controlPoints.length), this.minControlValue, this.maxControlValue);
-          this.controlPoints[i].currentValue = constrain(this.controlPoints[i].currentValue, -this.controlValueRange, this.controlValueRange);
-          this.controlPoints[i].currentBaseValue = constrain(this.controlPoints[i].currentBaseValue, i>0?this.controlPoints[i-1].currentBaseValue:this.minControlValue, i<this.controlPoints.length-1?this.controlPoints[i+1].currentBaseValue:this.maxControlValue);
-          this.getMappedCoordinates
+    if(!mouseIsPressed) this.changedPoints = false;
+    if(mouseIsPressed && this.isMouseOver()){
+      let didMovePoint = false;
+      for(let i = 0; i < this.mappedPoints.length; i++){
+        // if the mouse clicks a point
+        if(dist(mouseX, mouseY, this.mappedPoints[i].x, this.mappedPoints[i].y) < 20 + dist(mouseX, mouseY, pmouseX, pmouseY)){
+          didMovePoint = true;
+          this.splinePoints[i].x = constrain(map(mouseX, this.bounds.x+15, this.bounds.x + this.bounds.w-15, this.valueStart, this.valueEnd), i>0?this.splinePoints[i-1].x:this.valueStart, i<this.splinePoints.length-1?this.splinePoints[i+1].x:this.valueEnd);
+          this.splinePoints[i].y = constrain(map(mouseY, this.bounds.y + this.bounds.h-15, this.bounds.y+15, this.minValue, this.maxValue), this.minValue, this.maxValue);
+          if((keyIsDown(BACKSPACE) || keyIsDown(DELETE)) && this.splinePoints.length > 2){
+            this.splinePoints = this.splinePoints.slice(0, i).concat(this.splinePoints.slice(i + 1));
+            this.changedPoints = true;
+          }
           break;
+        }
+      }
+      if(didMovePoint || this.changedPoints) return;
+      // if no point was moved, check if a new point should be added
+      for(let i = 0; i < this.mappedPoints.length - 1; i++){
+        // if the mouse clicks between two points
+        let d1 = dist(mouseX, mouseY, this.mappedPoints[i].x, this.mappedPoints[i].y);
+        let d2 = dist(mouseX, mouseY, this.mappedPoints[i+1].x, this.mappedPoints[i+1].y);
+        let d3 = dist(this.mappedPoints[i].x, this.mappedPoints[i].y, this.mappedPoints[i+1].x, this.mappedPoints[i+1].y);
+        if(d1 + d2 < d3 + 10 + dist(mouseX, mouseY, pmouseX, pmouseY)){
+          this.changedPoints = true;
+          let newPointX = constrain(map(mouseX, this.bounds.x+15, this.bounds.x + this.bounds.w-15, this.valueStart, this.valueEnd), this.valueStart, this.valueEnd);
+          let newPointY = constrain(map(mouseY, this.bounds.y + this.bounds.h-15, this.bounds.y+15, this.minValue, this.maxValue), this.minValue, this.maxValue);
+          this.splinePoints.splice(i+1, 0, {x: newPointX, y: newPointY});
         }
       }
     }
   }
-  getMappedCoordinates(){
-    this.mappedCoordinates = [];
-    for(let i = 0; i < this.controlPoints.length; i++){
-      let x = map(this.controlPoints[i].currentBaseValue, this.minControlValue, this.maxControlValue, this.bounds.x + (this.bounds.w/this.controlPoints.length), this.bounds.x + this.bounds.w - (this.bounds.w/this.controlPoints.length));
-      let y = map(this.controlPoints[i].currentValue, this.controlValueRange, -this.controlValueRange, this.bounds.y, this.bounds.y + this.bounds.h);
-      this.mappedCoordinates.push({x: x, y: y});
+}
+
+class editColorElement extends editSplineElement {
+  constructor(chanel, x, y, w, h) {
+    super(0, 255, 0, 100, x, y, w, h);
+    this.chanel = chanel; // 0 = red, 1 = green, 2 = blue, 3 = alpha  
+    imageDisplay.effects.push(this);
+  }
+  updateImage(){
+    let img = imageDisplay.baseImg;
+    let img2 = imageDisplay.drawnImg;
+    for(let i = this.chanel; i < img.pixels.length; i += 4){
+      img2.pixels[i] = img.pixels[i];
+      for(let j = 0; j < this.splinePoints.length - 1; j++){
+        if(img.pixels[i] >= this.splinePoints[j].x && img.pixels[i] <= this.splinePoints[j+1].x){
+          img2.pixels[i] = map(img.pixels[i], this.splinePoints[j].x, this.splinePoints[j+1].x, this.splinePoints[j].y, this.splinePoints[j+1].y);
+          j = this.splinePoints.length-1;
+        }
+      }
     }
+    img2.updatePixels();
+  }
+  drawSelf(){
+    strokeWeight(1);
+    // draw gradient
+    this.drawBG();
+    for(let x = this.bounds.x; x < this.bounds.x + this.bounds.w; x++){
+      if(this.chanel == 0) stroke(lerpColor(color(0, 0, 0), color(255, 0, 0), x/(this.bounds.x+this.bounds.w)));
+      if(this.chanel == 1) stroke(lerpColor(color(0, 0, 0), color(0, 255, 0), x/(this.bounds.x+this.bounds.w)));
+      if(this.chanel == 2) stroke(lerpColor(color(0, 0, 0), color(0, 0, 255), x/(this.bounds.x+this.bounds.w)));
+      line(x, this.bounds.y, x, this.bounds.y + this.bounds.h);
+    }
+    this.drawSpline();
   }
 }
 
 class ImageDisplay {
-  constructor(img) {
+  constructor(img, imgCopy) {
     this.baseImg = img;
-    this.drawnImg = img;
+    this.drawnImg = imgCopy;
     this.bounds = {x:0, y:0, w:img.width, h:img.height};
     this.aspectRatio = img.width / img.height;
     this.subWindow = new subWindow(50, 50, 500, 500).addElement(this);
+    this.effects = [];
+    this.drawOriginalImage = false;
+    this.hasToggledImage = false;
   }
   constrainWithin(x, y, w, h){
     let scale = min(w / this.baseImg.width, h / this.baseImg.height);
@@ -233,19 +314,34 @@ class ImageDisplay {
     this.bounds.x = x + (w - this.bounds.w) / 2;
     this.bounds.y = y + (h - this.bounds.h) / 2;
   }
-  newImage(img){
+  newImage(img, imgCopy){
     fill(100);
     noStroke();
     rect(this.bounds.x-1, this.bounds.y-1, this.bounds.w+2, this.bounds.h+2);
     this.baseImg = img;
-    this.drawnImg = img;
+    this.drawnImg = imgCopy;
     this.aspectRatio = img.width / img.height;
     this.bounds = {x:0, y:0, w:img.width, h:img.height};
   }
   drawSelf(){
-    image(this.drawnImg, this.bounds.x, this.bounds.y, this.bounds.w, this.bounds.h);
-  }
+    if(keyIsDown(16) && mouseIsPressed && mouseX > this.bounds.x && mouseX < this.bounds.x + this.bounds.w && mouseY > this.bounds.y && mouseY < this.bounds.y + this.bounds.h){
+      if(!this.hasToggledImage){
+        this.hasToggledImage = true;
+        this.drawOriginalImage = !this.drawOriginalImage
+      }
+    } else this.hasToggledImage = false;
+    if(!this.drawOriginalImage) image(this.drawnImg, this.bounds.x, this.bounds.y, this.bounds.w, this.bounds.h);
+    else image(this.baseImg, this.bounds.x, this.bounds.y, this.bounds.w, this.bounds.h);
+  }  
   renderImage(){
-
+    this.baseImg.loadPixels();
+    this.drawnImg.loadPixels();
+    for(let i = 0; i < this.effects.length; i++){
+      this.effects[i].updateImage();
+    }
   }
+}
+
+function mouseReleased(){
+  if(imageDisplay.baseImg != undefined) imageDisplay.renderImage();
 }
