@@ -10,10 +10,11 @@ function setup() {
   dropCanvas = createCanvas(windowWidth, windowHeight);
   defineUI();
   background(100);
-  new subWindow(0, 0, 550, 700)
-  .addElement(new editColorElement(0, 10, 10, 480, 150))
-  .addElement(new editColorElement(1, 10, 170, 480, 150))
-  .addElement(new editColorElement(2, 10, 330, 480, 150));
+  new subWindow(0, 0, 550, 550)
+  .addElement(new editColorElement(0, 10, 10, 480, 100))
+  .addElement(new editColorElement(1, 10, 130, 480, 100))
+  .addElement(new editColorElement(2, 10, 250, 480, 100))
+  .addElement(new editColorElement(4, 10, 370, 480, 100));
 }
 
 function defineUI() {
@@ -193,7 +194,7 @@ class editSplineElement extends element {
     this.valueEnd = valueEnd;
     this.minValue = minValue;
     this.maxValue = maxValue;
-    this.splinePoints = [{x:this.valueStart, y:this.minValue},{x:this.valueStart, y:this.maxValue}];
+    this.splinePoints = [{x:this.valueStart, y:this.maxValue/2},{x:this.valueEnd, y:this.maxValue/2}];
     this.mappedPoints = [];
     this.setMappedPoints();
     this.changedPoints = true;
@@ -203,10 +204,11 @@ class editSplineElement extends element {
     rect(this.bounds.x, this.bounds.y, this.bounds.w, this.bounds.h);
   }
   drawSpline(){
-    stroke(0);
+    strokeWeight(2);
     noFill();
     this.mouseInteract();
     this.setMappedPoints();
+    stroke(255);
     beginShape();
     for(let i = 0; i < this.mappedPoints.length; i++){
       vertex(this.mappedPoints[i].x, this.mappedPoints[i].y);
@@ -214,10 +216,11 @@ class editSplineElement extends element {
     endShape();
     for(let i = 0; i < this.mappedPoints.length; i++){
       fill(0)
-      noStroke();
       if(dist(mouseX, mouseY, this.mappedPoints[i].x, this.mappedPoints[i].y) < 10 && mouseIsPressed) fill(255);
+      stroke(255);
       circle(this.mappedPoints[i].x, this.mappedPoints[i].y, 15);
     }
+    stroke(0);
   }
   setMappedPoints(){
     this.mappedPoints = [];
@@ -271,25 +274,40 @@ class editColorElement extends editSplineElement {
   updateImage(){
     let img = imageDisplay.baseImg;
     let img2 = imageDisplay.drawnImg;
-    for(let i = this.chanel; i < img.pixels.length; i += 4){
-      img2.pixels[i] = img.pixels[i];
-      for(let j = 0; j < this.splinePoints.length - 1; j++){
-        if(img.pixels[i] >= this.splinePoints[j].x && img.pixels[i] <= this.splinePoints[j+1].x){
-          img2.pixels[i] = map(img.pixels[i], this.splinePoints[j].x, this.splinePoints[j+1].x, this.splinePoints[j].y, this.splinePoints[j+1].y);
-          j = this.splinePoints.length-1;
+    
+    if(this.chanel!= 4){
+      for(let i = this.chanel; i < img.pixels.length; i += 4){
+        img2.pixels[i] = img.pixels[i];
+        for(let j = 0; j < this.splinePoints.length - 1; j++){
+          if(img.pixels[i] >= this.splinePoints[j].x && img.pixels[i] <= this.splinePoints[j+1].x){
+            img2.pixels[i] = img.pixels[i]*map(img.pixels[i], this.splinePoints[j].x, this.splinePoints[j+1].x, this.splinePoints[j].y, this.splinePoints[j+1].y)/50;
+            j = this.splinePoints.length-1;
+          }
+        }
+      }
+    } else{
+      for(let i = this.chanel; i < img.pixels.length; i += 4){
+        for(let j = 0; j < this.splinePoints.length - 1; j++){
+          if((img2.pixels[i]+img2.pixels[i+1]+img2.pixels[i+2]) >= this.splinePoints[j].x && img.pixels[i] <= this.splinePoints[j+1].x){
+            img2.pixels[i] = img2.pixels[i]*map(img.pixels[i], this.splinePoints[j].x, this.splinePoints[j+1].x, this.splinePoints[j].y, this.splinePoints[j+1].y)/50;
+            img2.pixels[i+1] = img2.pixels[i+1]*map(img.pixels[i], this.splinePoints[j].x, this.splinePoints[j+1].x, this.splinePoints[j].y, this.splinePoints[j+1].y)/50;
+            img2.pixels[i+2] = img2.pixels[i+2]*map(img.pixels[i], this.splinePoints[j].x, this.splinePoints[j+1].x, this.splinePoints[j].y, this.splinePoints[j+1].y)/50;
+            j = this.splinePoints.length-1;
+          }
         }
       }
     }
     img2.updatePixels();
   }
   drawSelf(){
-    strokeWeight(1);
+    strokeWeight(10);
     // draw gradient
     this.drawBG();
-    for(let x = this.bounds.x; x < this.bounds.x + this.bounds.w; x++){
+    for(let x = this.bounds.x; x < this.bounds.x + this.bounds.w; x+=5){
       if(this.chanel == 0) stroke(lerpColor(color(0, 0, 0), color(255, 0, 0), x/(this.bounds.x+this.bounds.w)));
       if(this.chanel == 1) stroke(lerpColor(color(0, 0, 0), color(0, 255, 0), x/(this.bounds.x+this.bounds.w)));
       if(this.chanel == 2) stroke(lerpColor(color(0, 0, 0), color(0, 0, 255), x/(this.bounds.x+this.bounds.w)));
+      if(this.chanel == 4) stroke(lerpColor(color(0, 0, 0), color(255, 255, 255), x/(this.bounds.x+this.bounds.w)));
       line(x, this.bounds.y, x, this.bounds.y + this.bounds.h);
     }
     this.drawSpline();
@@ -336,9 +354,11 @@ class ImageDisplay {
   renderImage(){
     this.baseImg.loadPixels();
     this.drawnImg.loadPixels();
+
     for(let i = 0; i < this.effects.length; i++){
       this.effects[i].updateImage();
     }
+    this.drawnImg.updatePixels();
   }
 }
 
